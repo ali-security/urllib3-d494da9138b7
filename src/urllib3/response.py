@@ -238,6 +238,7 @@ class HTTPResponse(io.IOBase):
         self.reason = reason
         self.strict = strict
         self.decode_content = decode_content
+        self._has_decoded_content = False
         self.retries = retries
         self.enforce_content_length = enforce_content_length
         self.auto_close = auto_close
@@ -302,7 +303,7 @@ class HTTPResponse(io.IOBase):
         Unread data in the HTTPResponse connection blocks the connection from being released back to the pool.
         """
         try:
-            self.read()
+            self.read(decode_content=self._has_decoded_content)
         except (HTTPError, SocketError, BaseSSLError, HTTPException):
             pass
 
@@ -410,11 +411,17 @@ class HTTPResponse(io.IOBase):
         Decode the data passed in and potentially flush the decoder.
         """
         if not decode_content:
+            if self._has_decoded_content:
+                raise RuntimeError(
+                    "Calling read(decode_content=False) is not supported after "
+                    "read(decode_content=True) was called."
+                )
             return data
 
         try:
             if self._decoder:
                 data = self._decoder.decompress(data)
+                self._has_decoded_content = True
         except self.DECODER_ERROR_CLASSES as e:
             content_encoding = self.headers.get("content-encoding", "").lower()
             raise DecodeError(
